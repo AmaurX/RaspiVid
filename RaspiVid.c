@@ -220,6 +220,7 @@ typedef enum
 
    MMAL_POOL_T *splitter_pool; /// Pointer to the pool of buffers used by splitter output port 0
    MMAL_POOL_T *encoder_pool; /// Pointer to the pool of buffers used by encoder output port
+   MMAL_POOL_T *encoder_pool_image;
 
    PORT_USERDATA callback_data;        /// Used to move data to the encoder callback
    PORT_USERDATA_IMAGE callback_data_image;
@@ -264,69 +265,6 @@ typedef enum
    int gpio_done;
    int gpio_counter;
 };
- 
- 
-//struct RASPIVID_STATE_S
-//{
-   //RASPICOMMONSETTINGS_PARAMETERS common_settings;     /// Common settings
-   //int timeout;                        /// Time taken before frame is grabbed and app then shuts down. Units are milliseconds
-   //MMAL_FOURCC_T encoding;             /// Requested codec video encoding (MJPEG or H264)
-   //int bitrate;                        /// Requested bitrate
-   //int framerate;                      /// Requested frame rate (fps)
-   //int intraperiod;                    /// Intra-refresh period (key frame rate)
-   //int quantisationParameter;          /// Quantisation parameter - quality. Set bitrate 0 and set this for variable bitrate
-   //int bInlineHeaders;                  /// Insert inline headers to stream (SPS, PPS)
-   //int demoMode;                       /// Run app in demo mode
-   //int demoInterval;                   /// Interval between camera settings changes
-   //int immutableInput;                 /// Flag to specify whether encoder works in place or creates a new buffer. Result is preview can display either
-   ///// the camera output or the encoder output (with compression artifacts)
-   //int profile;                        /// H264 profile to use for encoding
-   //int level;                          /// H264 level to use for encoding
-   //int waitMethod;                     /// Method for switching between pause and capture
-
-   //int onTime;                         /// In timed cycle mode, the amount of time the capture is on per cycle
-   //int offTime;                        /// In timed cycle mode, the amount of time the capture is off per cycle
-
-   //int segmentSize;                    /// Segment mode In timed cycle mode, the amount of time the capture is off per cycle
-   //int segmentWrap;                    /// Point at which to wrap segment counter
-   //int segmentNumber;                  /// Current segment counter
-   //int splitNow;                       /// Split at next possible i-frame if set to 1.
-   //int splitWait;                      /// Switch if user wants splited files
-
-   //RASPIPREVIEW_PARAMETERS preview_parameters;   /// Preview setup parameters
-   //RASPICAM_CAMERA_PARAMETERS camera_parameters; /// Camera setup parameters
-
-   //MMAL_COMPONENT_T *camera_component;    /// Pointer to the camera component
-   //MMAL_COMPONENT_T *splitter_component;  /// Pointer to the splitter component
-   //MMAL_COMPONENT_T *encoder_component;   /// Pointer to the encoder component
-   //MMAL_CONNECTION_T *preview_connection; /// Pointer to the connection from camera or splitter to preview
-   //MMAL_CONNECTION_T *splitter_connection;/// Pointer to the connection from camera to splitter
-   //MMAL_CONNECTION_T *encoder_connection; /// Pointer to the connection from camera to encoder
-
-   //MMAL_POOL_T *splitter_pool; /// Pointer to the pool of buffers used by splitter output port 0
-   //MMAL_POOL_T *encoder_pool; /// Pointer to the pool of buffers used by encoder output port
-
-   //PORT_USERDATA callback_data;        /// Used to move data to the encoder callback
-
-   //int bCapturing;                     /// State of capture/pause
-   //int bCircularBuffer;                /// Whether we are writing to a circular buffer
-
-   //int inlineMotionVectors;             /// Encoder outputs inline Motion Vectors
-   //char *imv_filename;                  /// filename of inline Motion Vectors output
-   //int raw_output;                      /// Output raw video from camera as well
-   //RAW_OUTPUT_FMT raw_output_fmt;       /// The raw video format
-   //char *raw_filename;                  /// Filename for raw video output
-   //int intra_refresh_type;              /// What intra refresh type to use. -1 to not set.
-   //int frame;
-   //char *pts_filename;
-   //int save_pts;
-   //int64_t starttime;
-   //int64_t lasttime;
-
-   //bool netListen;
-   //MMAL_BOOL_T addSPSTiming;
-   //int slices;
-//};
 
 /// Frame advance method
 enum
@@ -339,50 +277,6 @@ enum
    FRAME_NEXT_SIGNAL,
    FRAME_NEXT_IMMEDIATELY
 };
-
-///** Structure containing all state information for the current run
- //*/
-//typedef struct
-//{
-   //RASPICOMMONSETTINGS_PARAMETERS common_settings;     /// Common settings
-   //int timeout;                        /// Time taken before frame is grabbed and app then shuts down. Units are milliseconds
-   //int quality;                        /// JPEG quality setting (1-100)
-   //int wantRAW;                        /// Flag for whether the JPEG metadata also contains the RAW bayer image
-   //char *linkname;                     /// filename of output file
-   //int frameStart;                     /// First number of frame output counter
-   //MMAL_PARAM_THUMBNAIL_CONFIG_T thumbnailConfig;
-   //int demoMode;                       /// Run app in demo mode
-   //int demoInterval;                   /// Interval between camera settings changes
-   //MMAL_FOURCC_T encoding;             /// Encoding to use for the output file.
-   //const char *exifTags[MAX_USER_EXIF_TAGS]; /// Array of pointers to tags supplied from the command line
-   //int numExifTags;                    /// Number of supplied tags
-   //int enableExifTags;                 /// Enable/Disable EXIF tags in output
-   //int timelapse;                      /// Delay between each picture in timelapse mode. If 0, disable timelapse
-   //int fullResPreview;                 /// If set, the camera preview port runs at capture resolution. Reduces fps.
-   //int frameNextMethod;                /// Which method to use to advance to next frame
-   //int useGL;                          /// Render preview using OpenGL
-   //int glCapture;                      /// Save the GL frame-buffer instead of camera output
-   //int burstCaptureMode;               /// Enable burst mode
-   //int datetime;                       /// Use DateTime instead of frame#
-   //int timestamp;                      /// Use timestamp instead of frame#
-   //int restart_interval;               /// JPEG restart interval. 0 for none.
-
-   //RASPIPREVIEW_PARAMETERS preview_parameters;    /// Preview setup parameters
-   //RASPICAM_CAMERA_PARAMETERS camera_parameters; /// Camera setup parameters
-
-   //MMAL_COMPONENT_T *camera_component;    /// Pointer to the camera component
-   //MMAL_COMPONENT_T *encoder_component;   /// Pointer to the encoder component
-   //MMAL_COMPONENT_T *null_sink_component; /// Pointer to the null sink component
-   //MMAL_CONNECTION_T *preview_connection; /// Pointer to the connection from camera to preview
-   //MMAL_CONNECTION_T *encoder_connection; /// Pointer to the connection from camera to encoder
-
-   //MMAL_POOL_T *encoder_pool; /// Pointer to the pool of buffers used by encoder output port
-
-   ////RASPITEX_STATE raspitex_state; /// GL renderer state and parameters
-
-//} RASPISTILL_STATE;
-
-
 
 static struct
 {
@@ -587,6 +481,7 @@ static void default_status_image(RASPIVID_STATE *state)
    state->preview_connection = NULL;
    state->encoder_connection_image = NULL;
    state->encoder_pool = NULL;
+   state->encoder_pool_image = NULL;
    state->encodingimage = MMAL_ENCODING_JPEG;
    state->numExifTags = 0;
    state->enableExifTags = 1;
@@ -1540,28 +1435,6 @@ static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buf
       vcos_assert(pData->file_handle);
       if(pData->pstate->inlineMotionVectors) vcos_assert(pData->imv_file_handle);
 
-      //********************************************************************************************
-      //Check gpio status and write file if set, for testing we'll do this just once
-      //vcos_log_error(".");
-      //if((gpio_done == 0) && !(buffer->flags & MMAL_BUFFER_HEADER_FLAG_CODECSIDEINFO))
-      //{
-         //if(gpio_asserted == 100)
-         //{
-            ////Need to check here for header, we only want a single frame / image at the moment though so ignore it
-            //if(buffer->flags & MMAL_BUFFER_HEADER_FLAG_CONFIG)
-               //vcos_log_error("Found header data...\n");
-            //gpio_asserted = 0;
-            //gpio_done = 1;
-            //file_bytes_written = fwrite(buffer->data, 1, buffer->length, image_file_handle);
-            //fclose(image_file_handle);
-         //} else
-         //{
-            //gpio_asserted++;
-            //vcos_log_error("gpio_counter: %d", gpio_asserted);
-         //}
-      //}
-      //********************************************************************************************
-
       if (pData->cb_buff)
       {
          int space_in_buff = pData->cb_len - pData->cb_wptr;
@@ -1790,15 +1663,20 @@ static void encoder_buffer_callback_image(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_
 
    // We pass our file handle and other stuff in via the userdata field.
 
-   PORT_USERDATA_IMAGE *pData = (PORT_USERDATA_IMAGE *)port->userdata;
-
+   PORT_USERDATA_IMAGE *pData = (PORT_USERDATA_IMAGE *)port->userdata;   
+   fprintf(stderr, "Image Callback - Got port userdata!\n");
    if (pData)
    {
+      fprintf(stderr, "Image Callback - if pData!\n");
       int bytes_written = buffer->length;
-
+      fprintf(stderr, "Image Callback - buffer->length %d\n", bytes_written);
+      fprintf(stderr, "Image Callback - pData file_handle %d\n", pData->file_handle);
+      
       if (buffer->length && pData->file_handle)
       {
+         fprintf(stderr, "Image Callback - got here 1!\n");
          mmal_buffer_header_mem_lock(buffer);
+         fprintf(stderr, "Image Callback - got here 2!\n");
 
          bytes_written = fwrite(buffer->data, 1, buffer->length, pData->file_handle);
 
@@ -1813,8 +1691,12 @@ static void encoder_buffer_callback_image(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_
       }
 
       // Now flag if we have completed
+      fprintf(stderr, "Image Callback - Should have written a file by now\n");
+      
       if (buffer->flags & (MMAL_BUFFER_HEADER_FLAG_FRAME_END | MMAL_BUFFER_HEADER_FLAG_TRANSMISSION_FAILED))
          complete = 1;
+         
+      fprintf(stderr, "Image Callback - set complete flag\n");
    }
    else
    {
@@ -1823,6 +1705,7 @@ static void encoder_buffer_callback_image(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_
 
    // release buffer back to the pool
    mmal_buffer_header_release(buffer);
+   fprintf(stderr, "Image Callback - release buffer header\n");
 
    // and send one back to the port (if still open)
    if (port->is_enabled)
@@ -1830,7 +1713,9 @@ static void encoder_buffer_callback_image(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_
       MMAL_STATUS_T status = MMAL_SUCCESS;
       MMAL_BUFFER_HEADER_T *new_buffer;
 
-      new_buffer = mmal_queue_get(pData->pstate->encoder_pool->queue);
+      fprintf(stderr, "Image Callback - create new buffer\n");
+      new_buffer = mmal_queue_get(pData->pstate->encoder_pool_image->queue);
+      fprintf(stderr, "Image Callback - got new buffer\n");
 
       if (new_buffer)
       {
@@ -2658,6 +2543,7 @@ static MMAL_STATUS_T create_encoder_component_image(RASPIVID_STATE *state)
       encoder_output->buffer_size = encoder_output->buffer_size_min;
 
    encoder_output->buffer_num = encoder_output->buffer_num_recommended;
+   encoder_output->buffer_num = 3;
 
    if (encoder_output->buffer_num < encoder_output->buffer_num_min)
       encoder_output->buffer_num = encoder_output->buffer_num_min;
@@ -2722,7 +2608,7 @@ static MMAL_STATUS_T create_encoder_component_image(RASPIVID_STATE *state)
       vcos_log_error("Failed to create buffer header pool for encoder output port %s", encoder_output->name);
    }
 
-   state->encoder_pool = pool;
+   state->encoder_pool_image = pool;
    state->encoder_component_image = encoder;
 
    if (state->common_settings.verbose)
@@ -3414,13 +3300,10 @@ int main(int argc, const char **argv)
                      MMAL_BUFFER_HEADER_T *buffer = mmal_queue_get(state.encoder_pool->queue);
 
                      if (!buffer)
-                        vcos_log_error("Unable to get a required buffer %d from pool queue", q);
+                        vcos_log_error("Unable to get a required video buffer %d from pool queue", q);
 
                      if (mmal_port_send_buffer(encoder_output_port, buffer)!= MMAL_SUCCESS)
                         vcos_log_error("Unable to send a buffer to video encoder output port (%d)", q);
-                     
-                     if (mmal_port_send_buffer(encoder_output_port_image, buffer)!= MMAL_SUCCESS)
-                        vcos_log_error("Unable to send a buffer to stills encoder output port (%d)", q);
                   }
                }
 
@@ -3495,13 +3378,31 @@ int main(int argc, const char **argv)
                   vcos_sleep(state.timeout);
                else
                {
+                  //setup the buffers for the stills image encoder
+                  int num = mmal_queue_length(state.encoder_pool_image->queue);
+                  if (state.common_settings.verbose)
+                     fprintf(stderr, "Number of queued buffers %d\n", num);
+                  int q;
+                  for (q=0; q<num; q++)
+                  {
+                     MMAL_BUFFER_HEADER_T *buffer = mmal_queue_get(state.encoder_pool_image->queue);
+
+                     if (!buffer)
+                        vcos_log_error("Unable to get a required still buffer %d from pool queue", q);
+                     
+                     if (mmal_port_send_buffer(encoder_output_port_image, buffer)!= MMAL_SUCCESS)
+                        vcos_log_error("Unable to send a buffer to stills encoder output port (%d)", q);
+                     else
+                        fprintf(stderr, "Created buffer pool for still image encoder\n");
+                  }
+                  
                   // timeout = 0 so run forever
                   //state.gpio_counter = 0;
                   while(1)
                   {
                      //vcos_sleep(ABORT_INTERVAL);
                      //check gpio and capture image if set
-                     if(state.gpio_asserted == 1 && state.gpio_done == 0 && state.gpio_counter > 100)
+                     if(state.gpio_asserted == 1 && state.gpio_done == 0 && state.gpio_counter > 100000)
                      {
                         if (state.common_settings.verbose)
                            fprintf(stderr, "Starting capture %d\n", state.frame);
