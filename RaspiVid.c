@@ -139,6 +139,7 @@ typedef struct RASPIVID_STATE_S RASPIVID_STATE;
 typedef struct
 {
    FILE *file_handle;                   /// File handle to write buffer data to.
+   //FILE *file_handle2;                  /// File handle to write stills buffer data to.
    RASPIVID_STATE *pstate;              /// pointer to our state in case required in callback
    int abort;                           /// Set to 1 in callback if an error occurs to attempt to abort the capture
    char *cb_buff;                       /// Circular buffer
@@ -156,6 +157,7 @@ typedef struct
    FILE *raw_file_handle;               /// File handle to write raw data to.
    int  flush_buffers;
    FILE *pts_file_handle;               /// File timestamps
+   VCOS_SEMAPHORE_T complete_semaphore; /// semaphore which is posted when we reach end of frame (indicates end of capture or fault)
 } PORT_USERDATA;
 
 /** Struct used to pass information in encoder port userdata to callback
@@ -224,6 +226,7 @@ typedef enum
 
    PORT_USERDATA callback_data;        /// Used to move data to the encoder callback
    PORT_USERDATA_IMAGE callback_data_image;
+   //PORT_USERDATA callback_data_image;
 
    int bCapturing;                     /// State of capture/pause
    int bCircularBuffer;                /// Whether we are writing to a circular buffer
@@ -233,6 +236,7 @@ typedef enum
    int raw_output;                      /// Output raw video from camera as well
    RAW_OUTPUT_FMT raw_output_fmt;       /// The raw video format
    char *raw_filename;                  /// Filename for raw video output
+   char *jpg_filename;
    int intra_refresh_type;              /// What intra refresh type to use. -1 to not set.
    int frame;
    char *pts_filename;
@@ -508,6 +512,16 @@ static void default_status_image(RASPIVID_STATE *state)
    //raspitex_set_defaults(&state->raspitex_state);
 }
 
+/// Returns the number of ticks since an undefined time (usually system startup).
+static uint64_t GetTickCountMs()
+{
+    struct timespec ts;
+
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+
+    return (uint64_t)(ts.tv_nsec / 1000000) + ((uint64_t)ts.tv_sec * 1000ull);
+}
+
 /**
  * Assign a default set of parameters to the state passed in
  *
@@ -525,9 +539,39 @@ static void default_status(RASPIVID_STATE *state)
    memset(state, 0, sizeof(RASPIVID_STATE));
 
    raspicommonsettings_set_defaults(&state->common_settings);
-
-   // Now set anything non-zero
+   
    state->timeout = -1; // replaced with 5000ms later if unset
+   
+   state->quality = 100;
+   state->wantRAW = 0;
+   state->linkname = NULL;
+   state->frameStart = 0;
+   state->thumbnailConfig.enable = 1;
+   state->thumbnailConfig.width = 64;
+   state->thumbnailConfig.height = 48;
+   state->thumbnailConfig.quality = 35;
+   state->camera_component = NULL;
+   state->encoder_component_image = NULL;
+   state->preview_connection = NULL;
+   state->encoder_connection_image = NULL;
+   state->encoder_pool = NULL;
+   state->encoder_pool_image = NULL;
+   state->encodingimage = MMAL_ENCODING_JPEG;
+   state->numExifTags = 0;
+   state->enableExifTags = 1;
+   state->timelapse = 0;
+   state->fullResPreview = 0;
+   state->frameNextMethod = FRAME_NEXT_SINGLE;
+   state->useGL = 0;
+   state->glCapture = 0;
+   state->burstCaptureMode=0;
+   state->datetime = 0;
+   state->timestamp = 0;
+   state->restart_interval = 0;
+   state->gpio_asserted = 1;
+   state->gpio_done = 0;
+   state->gpio_counter = 0;
+   
    state->common_settings.width = 1920;       // Default to 1080p
    state->common_settings.height = 1080;
    state->encoding = MMAL_ENCODING_H264;
@@ -557,7 +601,6 @@ static void default_status(RASPIVID_STATE *state)
    state->netListen = false;
    state->addSPSTiming = MMAL_FALSE;
    state->slices = 1;
-
 
    // Setup preview window defaults
    raspipreview_set_defaults(&state->preview_parameters);
@@ -1664,13 +1707,19 @@ static void encoder_buffer_callback_image(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_
    // We pass our file handle and other stuff in via the userdata field.
 
    PORT_USERDATA_IMAGE *pData = (PORT_USERDATA_IMAGE *)port->userdata;   
+   //PORT_USERDATA *pData = (PORT_USERDATA *)port->userdata;   
    fprintf(stderr, "Image Callback - Got port userdata!\n");
+   vcos_assert(pData->file_handle == NULL);
+   
+   if(pData == NULL)
+      fprintf(stderr, "pData is NULL");
+      
    if (pData)
    {
       fprintf(stderr, "Image Callback - if pData!\n");
       int bytes_written = buffer->length;
       fprintf(stderr, "Image Callback - buffer->length %d\n", bytes_written);
-      fprintf(stderr, "Image Callback - pData file_handle %d\n", pData->file_handle);
+      //fprintf(stderr, "Image Callback - pData file_handle %d\n", pData->file_handle);
       
       if (buffer->length && pData->file_handle)
       {
@@ -1987,7 +2036,7 @@ static MMAL_STATUS_T create_camera_component(RASPIVID_STATE *state)
    format = still_port->format;
 
    format->encoding = MMAL_ENCODING_OPAQUE;
-   format->encoding_variant = MMAL_ENCODING_I420;
+   //format->encoding_variant = MMAL_ENCODING_I420;
 
    format->es->video.width = VCOS_ALIGN_UP(state->common_settings.width, 32);
    format->es->video.height = VCOS_ALIGN_UP(state->common_settings.height, 16);
@@ -2543,7 +2592,7 @@ static MMAL_STATUS_T create_encoder_component_image(RASPIVID_STATE *state)
       encoder_output->buffer_size = encoder_output->buffer_size_min;
 
    encoder_output->buffer_num = encoder_output->buffer_num_recommended;
-   encoder_output->buffer_num = 3;
+   //encoder_output->buffer_num = 3;
 
    if (encoder_output->buffer_num < encoder_output->buffer_num_min)
       encoder_output->buffer_num = encoder_output->buffer_num_min;
@@ -2830,8 +2879,8 @@ int main(int argc, const char **argv)
 {
    // Our main data storage vessel..
    RASPIVID_STATE state;
-   //RASPISTILL_STATE statei;
    PORT_USERDATA_IMAGE callback_data_image;
+   //PORT_USERDATA callback_data_image;
    int exit_code = EX_OK;
 
    MMAL_STATUS_T status = MMAL_SUCCESS;
@@ -2850,8 +2899,8 @@ int main(int argc, const char **argv)
    MMAL_PORT_T *splitter_output_port = NULL;
    MMAL_PORT_T *splitter_preview_port = NULL;
 
-   image_file_handle = fopen("/home/pi/test.jpeg", "wb");
-   printf("Opened file for writing...\n");
+   //callback_data_image.file_handle = fopen("/home/pi/test.jpeg", "wb");
+   //printf("Opened file for writing...\n");
 
    bcm_host_init();
 
@@ -2876,7 +2925,7 @@ int main(int argc, const char **argv)
    }
 
    default_status(&state);
-   default_status_image(&state);
+   //default_status_image(&state);
 
    // Parse the command line and put options in to our status structure
    if (parse_cmdline(argc, argv, &state))
@@ -2894,8 +2943,10 @@ int main(int argc, const char **argv)
 
    if (state.common_settings.verbose)
    {
+      fprintf(stderr, "START OF APP DETAILS AND STATE DUMP\n");
       print_app_details(stderr);
       dump_status(&state);
+      fprintf(stderr, "END OF APP DETAILS AND STATE DUMP\n");
    }
 
    check_camera_model(state.common_settings.cameraNum);
@@ -2920,7 +2971,7 @@ int main(int argc, const char **argv)
    }
    else if ((status = create_encoder_component(&state)) != MMAL_SUCCESS)
    {
-      vcos_log_error("%s: Failed to create video encode component", __func__);
+      vcos_log_error("%s: Failed to GetTickCountMscreate video encode component", __func__);
       raspipreview_destroy(&state.preview_parameters);
       destroy_camera_component(&state);
       exit_code = EX_SOFTWARE;
@@ -3071,9 +3122,10 @@ int main(int argc, const char **argv)
 
       // Set up our userdata - this is passed though to the callback where we need the information.
       // Null until we open our filename
-      callback_data_image.file_handle = NULL;
-      callback_data_image.pstate = &state;
-      vcos_status = vcos_semaphore_create(&callback_data_image.complete_semaphore, "RaspiStill-sem", 0);
+      //callback_data_image.file_handle = NULL;
+      state.callback_data_image.pstate = &state;
+      //state.callback_data_image.abort = 0;
+      vcos_status = vcos_semaphore_create(&callback_data_image.complete_semaphore, "RaspiVid-sem", 0);
 
       vcos_assert(vcos_status == VCOS_SUCCESS);
 
@@ -3242,6 +3294,7 @@ int main(int argc, const char **argv)
          // Set up our userdata - this is passed though to the callback where we need the information.
          encoder_output_port->userdata = (struct MMAL_PORT_USERDATA_T *)&state.callback_data;
          encoder_output_port_image->userdata = (struct MMAL_PORT_USERDATA_T *)&state.callback_data_image;
+         //encoder_output_port_image->userdata = (struct MMAL_PORT_USERDATA_T *)&state.callback_data;
 //Video
          if (state.common_settings.verbose)
             fprintf(stderr, "Enabling video encoder output port\n");
@@ -3255,16 +3308,67 @@ int main(int argc, const char **argv)
             goto error;
          }
 //Stills
+         //Open file - set the jpg_filename, make sure to reserver memory using malloc
+         char jpg[20] = "/home/pi/test.jpg";
+         int lenf = strlen(jpg);
+         state.jpg_filename = malloc(lenf+1);
+         vcos_assert(state.jpg_filename);
+         if(state.jpg_filename)
+            strncpy(state.jpg_filename, jpg, lenf);
+         
          if (state.common_settings.verbose)
-            fprintf(stderr, "Enabling stills encoder output port\n");
+            fprintf(stderr, "Filename is: %s", state.jpg_filename);
+         state.callback_data_image.file_handle = open_filename(&state, state.jpg_filename);
 
          // Enable the encoder output port and tell it its callback function
+         if (state.common_settings.verbose)
+         {
+            fprintf(stderr, "Enabling stills encoder output port.\n");
+            fprintf(stderr, "Enable Start\n");
+         }
+         
          status = mmal_port_enable(encoder_output_port_image, encoder_buffer_callback_image);
+         fprintf(stderr, "Enable Done\n");
 
          if (status != MMAL_SUCCESS)
          {
+            fprintf(stderr, "Failed to setup stills encoder output\n");
             vcos_log_error("Failed to setup stills encoder output");
             goto error;
+         } else
+         {
+            if (state.common_settings.verbose)
+               fprintf(stderr, "Stills encoder output port enabled\n");
+         }
+
+         //setup the buffers for the stills image encoder
+         if (state.common_settings.verbose)
+            fprintf(stderr, "Setting up buffers for image encoder callback\n");
+            
+         if (state.callback_data_image.file_handle)
+         {
+            int num = mmal_queue_length(state.encoder_pool_image->queue);
+            if (state.common_settings.verbose)
+               fprintf(stderr, "Number of queued buffers %d\n", num);
+            int q;
+            for (q = 0; q < num; q++)
+            {
+               MMAL_BUFFER_HEADER_T *buffer = mmal_queue_get(state.encoder_pool_image->queue);
+
+               if (!buffer)
+                  vcos_log_error("Unable to get a required still buffer %d from pool queue", q);
+               
+               if (mmal_port_send_buffer(encoder_output_port_image, buffer)!= MMAL_SUCCESS)
+                  vcos_log_error("Unable to send a buffer to stills encoder output port (%d)", q);
+               else
+                  if (state.common_settings.verbose)
+                     fprintf(stderr, "Created buffer pool for still image encoder\n");
+            }
+         }
+         else
+         {
+            if (state.common_settings.verbose)
+               fprintf(stderr, "Problem with encoder output file handle, not setting up buffers!\n");
          }
 //
          if (state.demoMode)
@@ -3286,14 +3390,21 @@ int main(int argc, const char **argv)
          {
             // Only encode stuff if we have a filename and it opened
             // Note we use the copy in the callback, as the call back MIGHT change the file handle
+            if (state.common_settings.verbose)
+               fprintf(stderr, "Start to setup buffers for video callback\n");
+               
             if (state.callback_data.file_handle || state.callback_data.raw_file_handle)
             {
+               if (state.common_settings.verbose)
+                  fprintf(stderr, "Setup buffers for video callback done\n");
                int running = 1;
 
                // Send all the buffers to the encoder output port
                if (state.callback_data.file_handle)
                {
                   int num = mmal_queue_length(state.encoder_pool->queue);
+                  if (state.common_settings.verbose)
+                     fprintf(stderr, "Number of queued buffers %d\n", num);
                   int q;
                   for (q=0; q<num; q++)
                   {
@@ -3304,6 +3415,9 @@ int main(int argc, const char **argv)
 
                      if (mmal_port_send_buffer(encoder_output_port, buffer)!= MMAL_SUCCESS)
                         vcos_log_error("Unable to send a buffer to video encoder output port (%d)", q);
+                     else
+                        if (state.common_settings.verbose)
+                           fprintf(stderr, "Created buffer pool for video encoder port\n");
                   }
                }
 
@@ -3345,9 +3459,15 @@ int main(int argc, const char **argv)
                   if (state.common_settings.verbose)
                   {
                      if (state.bCapturing)
-                        fprintf(stderr, "Starting video capture\n");
+                     {
+                        if (state.common_settings.verbose)
+                           fprintf(stderr, "Starting video capture\n");
+                     }
                      else
-                        fprintf(stderr, "Pausing video capture\n");
+                     {
+                        if (state.common_settings.verbose)
+                           fprintf(stderr, "Pausing video capture\n");
+                     }
                   }
 
                   if(state.splitWait)
@@ -3378,31 +3498,15 @@ int main(int argc, const char **argv)
                   vcos_sleep(state.timeout);
                else
                {
-                  //setup the buffers for the stills image encoder
-                  int num = mmal_queue_length(state.encoder_pool_image->queue);
-                  if (state.common_settings.verbose)
-                     fprintf(stderr, "Number of queued buffers %d\n", num);
-                  int q;
-                  for (q=0; q<num; q++)
-                  {
-                     MMAL_BUFFER_HEADER_T *buffer = mmal_queue_get(state.encoder_pool_image->queue);
-
-                     if (!buffer)
-                        vcos_log_error("Unable to get a required still buffer %d from pool queue", q);
-                     
-                     if (mmal_port_send_buffer(encoder_output_port_image, buffer)!= MMAL_SUCCESS)
-                        vcos_log_error("Unable to send a buffer to stills encoder output port (%d)", q);
-                     else
-                        fprintf(stderr, "Created buffer pool for still image encoder\n");
-                  }
-                  
                   // timeout = 0 so run forever
                   //state.gpio_counter = 0;
+                  uint64_t xtimeout = GetTickCountMs();
                   while(1)
                   {
-                     //vcos_sleep(ABORT_INTERVAL);
+                     vcos_sleep(ABORT_INTERVAL);
                      //check gpio and capture image if set
-                     if(state.gpio_asserted == 1 && state.gpio_done == 0 && state.gpio_counter > 100000)
+                     //if(state.gpio_asserted == 1 && state.gpio_done == 0 && state.gpio_counter > 10)
+                     if(state.gpio_asserted == 1 && state.gpio_done == 0 && xtimeout + 10000 < GetTickCountMs())
                      {
                         if (state.common_settings.verbose)
                            fprintf(stderr, "Starting capture %d\n", state.frame);
@@ -3417,7 +3521,8 @@ int main(int argc, const char **argv)
                            // Wait for capture to complete
                            // For some reason using vcos_semaphore_wait_timeout sometimes returns immediately with bad parameter error
                            // even though it appears to be all correct, so reverting to untimed one until figure out why its erratic
-                           vcos_semaphore_wait(&callback_data_image.complete_semaphore);
+                           //vcos_semaphore_wait(&state.callback_data_image.complete_semaphore);
+                           vcos_semaphore_wait(&state.callback_data.complete_semaphore);
                            if (state.common_settings.verbose)
                               fprintf(stderr, "Finished capture %d\n", state.frame);
                            state.gpio_done = 1;
