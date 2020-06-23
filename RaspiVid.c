@@ -1716,19 +1716,13 @@ static void encoder_buffer_callback_image(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_
       
    if (pData)
    {
-      fprintf(stderr, "Image Callback - if pData!\n");
       int bytes_written = buffer->length;
       fprintf(stderr, "Image Callback - buffer->length %d\n", bytes_written);
-      //fprintf(stderr, "Image Callback - pData file_handle %d\n", pData->file_handle);
       
       if (buffer->length && pData->file_handle)
       {
-         fprintf(stderr, "Image Callback - got here 1!\n");
          mmal_buffer_header_mem_lock(buffer);
-         fprintf(stderr, "Image Callback - got here 2!\n");
-
          bytes_written = fwrite(buffer->data, 1, buffer->length, pData->file_handle);
-
          mmal_buffer_header_mem_unlock(buffer);
       }
 
@@ -1739,9 +1733,7 @@ static void encoder_buffer_callback_image(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_
          complete = 1;
       }
 
-      // Now flag if we have completed
-      fprintf(stderr, "Image Callback - Should have written a file by now\n");
-      
+      // Now flag if we have completed      
       if (buffer->flags & (MMAL_BUFFER_HEADER_FLAG_FRAME_END | MMAL_BUFFER_HEADER_FLAG_TRANSMISSION_FAILED))
          complete = 1;
          
@@ -1762,9 +1754,7 @@ static void encoder_buffer_callback_image(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_
       MMAL_STATUS_T status = MMAL_SUCCESS;
       MMAL_BUFFER_HEADER_T *new_buffer;
 
-      fprintf(stderr, "Image Callback - create new buffer\n");
       new_buffer = mmal_queue_get(pData->pstate->encoder_pool_image->queue);
-      fprintf(stderr, "Image Callback - got new buffer\n");
 
       if (new_buffer)
       {
@@ -3319,7 +3309,7 @@ int main(int argc, const char **argv)
          }
 //Stills
          //Open file - set the jpg_filename, make sure to reserver memory using malloc
-         char jpg[20] = "/home/pi/test.jpg";
+         char jpg[20] = "/ramdisk/test.jpg";
          int lenf = strlen(jpg);
          state.jpg_filename = malloc(lenf+1);
          vcos_assert(state.jpg_filename);
@@ -3454,7 +3444,8 @@ int main(int argc, const char **argv)
                   // Change state
 
                   state.bCapturing = !state.bCapturing;
-
+                  if (state.common_settings.verbose)
+                     fprintf(stderr, "bCapturing flag %d\n", state.bCapturing);
                   if (mmal_port_parameter_set_boolean(camera_video_port, MMAL_PARAMETER_CAPTURE, state.bCapturing) != MMAL_SUCCESS)
                   {
                      // How to handle?
@@ -3513,6 +3504,9 @@ int main(int argc, const char **argv)
                         if (state.common_settings.verbose)
                            fprintf(stderr, "Starting capture %d\n", state.frame);
 
+                        //Pausing video port
+                        mmal_port_parameter_set_boolean(camera_video_port, MMAL_PARAMETER_CAPTURE, !state.bCapturing);
+
                         //This triggers the capture and the callback will process the buffer and save it
                         if (mmal_port_parameter_set_boolean(camera_still_port, MMAL_PARAMETER_CAPTURE, 1) != MMAL_SUCCESS)
                         {
@@ -3521,10 +3515,20 @@ int main(int argc, const char **argv)
                         else
                         {
                            // Wait for capture to complete
-                           // For some reason using vcos_semaphore_wait_timeout sometimes returns immediately with bad parameter error
-                           // even though it appears to be all correct, so reverting to untimed one until figure out why its erratic
-                           //vcos_semaphore_wait(&state.callback_data_image.complete_semaphore);
                            vcos_semaphore_wait(&state.callback_data_image.complete_semaphore);
+                           
+                           //Resume video port
+                           mmal_port_parameter_set_boolean(camera_video_port, MMAL_PARAMETER_CAPTURE, state.bCapturing);
+                           if (mmal_port_parameter_set_boolean(encoder_output_port, MMAL_PARAMETER_VIDEO_REQUEST_I_FRAME, 1) != MMAL_SUCCESS)
+                           {
+                              vcos_log_error("failed to request I-FRAME");
+                           }
+                           
+                           if (mmal_port_parameter_set_boolean(camera_still_port, MMAL_PARAMETER_CAPTURE, 0) != MMAL_SUCCESS)
+                           {
+                              vcos_log_error("%s: Failed to start capture", __func__);
+                           }
+                           
                            if (state.common_settings.verbose)
                               fprintf(stderr, "Finished capture %d\n", state.frame);
                            state.gpio_done = 1;
