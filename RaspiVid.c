@@ -2767,11 +2767,15 @@ static int wait_for_next_change(RASPIVID_STATE *state)
    switch (state->waitMethod)
    {
    case WAIT_METHOD_NONE:
+      if (state->common_settings.verbose)
+         fprintf(stderr, "Wait None\n");
       (void)pause_and_test_abort(state, state->timeout);
       return 0;
 
    case WAIT_METHOD_FOREVER:
    {
+      if (state->common_settings.verbose)
+         fprintf(stderr, "Wait Forever\n");
       // We never return from this. Expect a ctrl-c to exit or abort.
       while (!state->callback_data.abort)
          // Have a sleep so we don't hog the CPU.
@@ -2782,6 +2786,8 @@ static int wait_for_next_change(RASPIVID_STATE *state)
 
    case WAIT_METHOD_TIMED:
    {
+      if (state->common_settings.verbose)
+         fprintf(stderr, "Wait method timed\n");
       int abort;
 
       if (state->bCapturing)
@@ -2797,6 +2803,8 @@ static int wait_for_next_change(RASPIVID_STATE *state)
 
    case WAIT_METHOD_KEYPRESS:
    {
+      if (state->common_settings.verbose)
+         fprintf(stderr, "Wait Method Keypress\n");
       char ch;
 
       if (state->common_settings.verbose)
@@ -2842,6 +2850,8 @@ static int wait_for_next_change(RASPIVID_STATE *state)
 
    case WAIT_METHOD_SIGNAL:
    {
+      if (state->common_settings.verbose)
+         fprintf(stderr, "Wait Method Signal\n");
       // Need to wait for a SIGUSR1 signal
       sigset_t waitset;
       int sig;
@@ -3486,7 +3496,51 @@ int main(int argc, const char **argv)
                      }
                      initialCapturing=0;
                   }
-                  running = wait_for_next_change(&state);
+                  
+                  //running = wait_for_next_change(&state);
+                  
+                  //Copy of image capture routine here
+                  uint64_t xtimeout = GetTickCountMs();
+                  while(1)
+                  {
+                     //vcos_sleep(ABORT_INTERVAL);
+                     //running = wait_for_next_change(&state);
+                     //if (state.common_settings.verbose)
+                     //      fprintf(stderr, "Waiting for image capture timeout %d\n", state.frame);
+                     //check gpio and capture image if set
+                     if(state.gpio_asserted == 1 && state.gpio_done == 0 && xtimeout + 20000 < GetTickCountMs())
+                     {
+                        if (state.common_settings.verbose)
+                           fprintf(stderr, "Starting capture %d\n", state.frame);
+
+                        //This triggers the capture and the callback will process the buffer and save it
+                        if (mmal_port_parameter_set_boolean(camera_still_port, MMAL_PARAMETER_CAPTURE, 1) != MMAL_SUCCESS)
+                        {
+                           vcos_log_error("%s: Failed to start capture", __func__);
+                        }
+                        else
+                        {
+                           // Wait for capture to complete
+                           // For some reason using vcos_semaphore_wait_timeout sometimes returns immediately with bad parameter error
+                           // even though it appears to be all correct, so reverting to untimed one until figure out why its erratic
+                           //vcos_semaphore_wait(&state.callback_data_image.complete_semaphore);
+                           vcos_semaphore_wait(&state.callback_data_image.complete_semaphore);
+                           if (state.common_settings.verbose)
+                              fprintf(stderr, "Finished capture %d\n", state.frame);
+                           state.gpio_done = 1;
+                        }
+                     } 
+                     //else
+                     //{
+                        //if (state.common_settings.verbose)
+                              //fprintf(stderr, "%d\n", state.gpio_counter);
+                        
+                        //if(state.gpio_asserted == 1)
+                           //state.gpio_counter++;
+                     //}
+                  }
+                  
+                  //End copy of image capture routine here
                }
 
                if (state.common_settings.verbose)
